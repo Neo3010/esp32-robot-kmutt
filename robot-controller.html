@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ROBO CTRL</title>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:      #060810;
+    --surface: #0c1018;
+    --border:  #1a2535;
+    --accent:  #00e5ff;
+    --hot:     #ff4d00;
+    --green:   #00ff9d;
+    --red:     #ff2255;
+    --muted:   #2a3a4a;
+    --text:    #cde4f0;
+    --dim:     #3d5060;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background:var(--bg); color:var(--text);
+    font-family:'JetBrains Mono',monospace;
+    height:100vh;
+    display:grid;
+    grid-template-rows:48px 1fr;
+    grid-template-columns:1fr 280px;
+    overflow:hidden;
+  }
+
+  /* ── TOPBAR ── */
+  #topbar {
+    grid-column:1/-1;
+    background:var(--surface); border-bottom:1px solid var(--border);
+    display:flex; align-items:center; padding:0 20px; gap:14px;
+  }
+  .logo { font-family:'Rajdhani',sans-serif; font-weight:700; font-size:20px; letter-spacing:5px; color:var(--accent); text-shadow:0 0 16px rgba(0,229,255,.5); }
+  .logo b { color:var(--hot); }
+  .sep { width:1px; height:20px; background:var(--border); }
+  .pill { display:flex; align-items:center; gap:6px; font-size:10px; letter-spacing:2px; padding:4px 10px; border:1px solid var(--border); border-radius:2px; white-space:nowrap; }
+  .dot { width:7px; height:7px; border-radius:50%; background:var(--red); box-shadow:0 0 6px var(--red); transition:all .3s; }
+  .dot.on { background:var(--green); box-shadow:0 0 8px var(--green); animation:blink 2s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.4} }
+  .pill-label { color:var(--dim); transition:color .3s; }
+  .pill-label.on { color:var(--green); }
+  #hum-pill { display:flex; align-items:center; gap:6px; font-size:10px; letter-spacing:2px; padding:4px 10px; border:1px solid var(--border); border-radius:2px; white-space:nowrap; }
+  #hum-val { font-family:'Rajdhani',sans-serif; font-weight:700; font-size:13px; color:var(--text); transition:color .3s; }
+  #hum-val.warn { color:var(--red); }
+  .spacer { flex:1; }
+  .hint { font-size:9px; letter-spacing:2px; color:var(--dim); white-space:nowrap; }
+
+  /* ── HUMIDITY ALERT BANNER ── */
+  #hum-alert {
+    position:fixed; top:48px; left:50%; transform:translateX(-50%);
+    z-index:99998; display:none;
+    background:rgba(255,34,85,.15); border:1px solid var(--red);
+    padding:10px 28px; font-family:'Rajdhani',sans-serif;
+    font-weight:700; font-size:13px; letter-spacing:3px; color:var(--red);
+    animation:alertpulse 1s infinite; backdrop-filter:blur(4px); white-space:nowrap;
+  }
+  @keyframes alertpulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+
+  /* ── CAMERA PANE ── */
+  #cam-main { grid-column:1; grid-row:2; position:relative; background:#000; overflow:hidden; }
+  #cam-feed { width:100%; height:100%; object-fit:cover; display:none; }
+  #no-signal {
+    position:absolute; inset:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:14px;
+    background:radial-gradient(ellipse at center,#0a1520 0%,#060810 100%);
+  }
+  .ns-grid {
+    position:absolute; inset:0;
+    background-image:
+      repeating-linear-gradient(0deg,transparent,transparent 39px,rgba(0,229,255,.035) 39px,rgba(0,229,255,.035) 40px),
+      repeating-linear-gradient(90deg,transparent,transparent 39px,rgba(0,229,255,.035) 39px,rgba(0,229,255,.035) 40px);
+  }
+  .ns-icon  { font-size:54px; opacity:.1; }
+  .ns-title { font-family:'Rajdhani',sans-serif; font-size:22px; font-weight:700; letter-spacing:6px; color:var(--dim); }
+  .ns-sub   { font-size:10px; letter-spacing:3px; color:var(--muted); }
+  .cc { position:absolute; width:24px; height:24px; border-color:var(--accent); opacity:.65; pointer-events:none; }
+  .cc.tl { top:16px; left:16px; border-top:2px solid; border-left:2px solid; }
+  .cc.tr { top:16px; right:16px; border-top:2px solid; border-right:2px solid; }
+  .cc.bl { bottom:56px; left:16px; border-bottom:2px solid; border-left:2px solid; }
+  .cc.br { bottom:56px; right:16px; border-bottom:2px solid; border-right:2px solid; }
+  #live-badge {
+    position:absolute; top:18px; left:50%; transform:translateX(-50%);
+    font-size:9px; letter-spacing:3px; padding:4px 14px;
+    background:rgba(0,0,0,.8); border:1px solid var(--hot); color:var(--hot); display:none;
+  }
+
+  /* ── RECORDING ── */
+  #rec-bar { position:absolute; top:16px; right:16px; display:flex; flex-direction:column; align-items:flex-end; gap:6px; z-index:10; }
+  .rec-btn {
+    font-family:'Rajdhani',sans-serif; font-weight:700; font-size:10px; letter-spacing:2px;
+    background:rgba(0,0,0,.75); border:1px solid var(--border); color:var(--dim);
+    padding:6px 12px; cursor:pointer; transition:all .2s; white-space:nowrap; text-decoration:none;
+    clip-path:polygon(5px 0%,100% 0%,calc(100% - 5px) 100%,0% 100%);
+    display:inline-block;
+  }
+  .rec-btn:hover { border-color:var(--accent); color:var(--accent); }
+  .rec-btn.recording { border-color:var(--red); color:var(--red); box-shadow:0 0 12px rgba(255,34,85,.3); animation:recpulse 1s infinite; }
+  @keyframes recpulse { 0%,100%{opacity:1} 50%{opacity:.6} }
+  #rec-timer { font-size:11px; letter-spacing:2px; color:var(--red); background:rgba(0,0,0,.8); padding:3px 10px; border:1px solid var(--red); display:none; }
+  #rec-files { position:absolute; bottom:56px; right:16px; max-width:280px; z-index:10; display:flex; flex-direction:column; gap:4px; }
+  .rec-file { background:rgba(6,8,16,.93); border:1px solid var(--border); padding:7px 10px; font-size:9px; letter-spacing:1px; display:flex; align-items:center; gap:6px; animation:fadeIn .3s ease; }
+  @keyframes fadeIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:none} }
+  .rf-name { color:var(--accent); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rf-size { color:var(--dim); white-space:nowrap; }
+  .rf-dl { font-family:'Rajdhani',sans-serif; font-weight:700; font-size:9px; letter-spacing:1px; padding:2px 7px; cursor:pointer; text-decoration:none; white-space:nowrap; color:var(--accent); border:1px solid var(--accent); }
+  .rf-dl:hover { background:rgba(0,229,255,.1); }
+  #rec-canvas { display:none; }
+
+  /* ── CAMERA IP BAR ── */
+  #cam-bar {
+    position:absolute; bottom:0; left:0; right:0;
+    background:linear-gradient(transparent,rgba(6,8,16,.96));
+    padding:22px 16px 12px; display:flex; align-items:center; gap:8px;
+  }
+  #cam-ip { flex:1; background:rgba(0,0,0,.55); border:1px solid var(--border); color:var(--text); font-family:'JetBrains Mono',monospace; font-size:11px; padding:7px 12px; outline:none; letter-spacing:1px; transition:border-color .2s; }
+  #cam-ip:focus { border-color:var(--accent); }
+  #cam-ip::placeholder { color:var(--dim); }
+  .cbtn { font-family:'Rajdhani',sans-serif; font-weight:700; font-size:11px; letter-spacing:2px; background:transparent; border:1px solid var(--accent); color:var(--accent); padding:7px 16px; cursor:pointer; transition:all .2s; white-space:nowrap; clip-path:polygon(6px 0%,100% 0%,calc(100% - 6px) 100%,0% 100%); }
+  .cbtn:hover { background:rgba(0,229,255,.1); }
+  .cbtn.off { border-color:var(--red); color:var(--red); }
+  .cbtn.off:hover { background:rgba(255,34,85,.1); }
+
+  /* ── SIDEBAR ── */
+  #sidebar { grid-column:2; grid-row:2; background:var(--surface); border-left:1px solid var(--border); display:flex; flex-direction:column; overflow-y:auto; overflow-x:hidden; }
+  #sidebar::-webkit-scrollbar { width:3px; }
+  #sidebar::-webkit-scrollbar-thumb { background:var(--border); }
+  .sec { border-bottom:1px solid var(--border); padding:14px 16px; }
+  .sec-lbl { font-family:'Rajdhani',sans-serif; font-size:9px; font-weight:700; letter-spacing:4px; color:var(--dim); margin-bottom:10px; }
+
+  /* BLE */
+  #bt-name { width:100%; background:rgba(0,0,0,.4); border:1px solid var(--border); color:var(--text); font-family:'JetBrains Mono',monospace; font-size:10px; padding:7px 10px; outline:none; letter-spacing:1px; margin-bottom:8px; transition:border-color .2s; }
+  #bt-name:focus { border-color:var(--accent); }
+  #bt-name::placeholder { color:var(--dim); }
+  #btn-bt { width:100%; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px; letter-spacing:3px; background:transparent; border:1px solid var(--accent); color:var(--accent); padding:10px; cursor:pointer; transition:all .2s; clip-path:polygon(8px 0%,100% 0%,calc(100% - 8px) 100%,0% 100%); }
+  #btn-bt:hover { background:rgba(0,229,255,.08); box-shadow:0 0 14px rgba(0,229,255,.2); }
+  #btn-bt.disc { border-color:var(--red); color:var(--red); }
+  #btn-bt.disc:hover { background:rgba(255,34,85,.08); }
+
+  /* D-PAD */
+  .dpad { display:flex; flex-direction:column; align-items:center; }
+  .drow { display:flex; }
+  .db { width:70px; height:60px; background:rgba(0,229,255,.04); border:1px solid var(--border); color:var(--accent); font-size:18px; display:flex; align-items:center; justify-content:center; flex-direction:column; cursor:pointer; transition:all .1s; user-select:none; -webkit-user-select:none; }
+  .db .k { font-size:8px; color:var(--dim); margin-top:2px; }
+  .db:hover { background:rgba(0,229,255,.1); border-color:var(--accent); }
+  .db.active { background:rgba(0,229,255,.2); border-color:var(--accent); box-shadow:inset 0 0 14px rgba(0,229,255,.15); color:#fff; transform:scale(.95); }
+  .ds { width:70px; height:60px; }
+  .dc { width:70px; height:60px; background:rgba(0,0,0,.4); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; cursor:pointer; transition:all .1s; }
+  .dc:hover { background:rgba(255,77,0,.1); border-color:var(--hot); }
+  .dc:active { transform:scale(.95); }
+  .sq { width:20px; height:20px; background:var(--hot); box-shadow:0 0 8px rgba(255,77,0,.6); }
+  .lcmd { display:flex; align-items:center; gap:8px; padding:7px 10px; background:rgba(0,0,0,.3); border:1px solid var(--border); margin-top:10px; }
+  .lcmd-lbl { font-size:8px; letter-spacing:2px; color:var(--dim); white-space:nowrap; }
+  #lc-val { font-family:'Rajdhani',sans-serif; font-weight:700; font-size:15px; color:var(--accent); letter-spacing:3px; transition:color .1s; }
+
+  /* SPEED SLIDER */
+  .speed-slider { -webkit-appearance:none; appearance:none; width:100%; height:4px; background:linear-gradient(to right,var(--accent) 0%,var(--accent) 78%,var(--border) 78%); outline:none; border-radius:0; cursor:pointer; margin:10px 0 6px; }
+  .speed-slider::-webkit-slider-thumb { -webkit-appearance:none; width:16px; height:16px; background:var(--accent); cursor:pointer; box-shadow:0 0 8px rgba(0,229,255,.6); clip-path:polygon(50% 0%,100% 50%,50% 100%,0% 50%); }
+  .speed-slider::-moz-range-thumb { width:16px; height:16px; background:var(--accent); cursor:pointer; border:none; }
+  .speed-row { display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; }
+  .speed-lbl { font-size:9px; letter-spacing:2px; color:var(--dim); }
+  .speed-val { font-family:'Rajdhani',sans-serif; font-weight:700; font-size:16px; color:var(--accent); letter-spacing:2px; }
+  .speed-presets { display:flex; gap:4px; margin-top:8px; }
+  .sp-btn { flex:1; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:10px; letter-spacing:1px; padding:5px 0; background:transparent; border:1px solid var(--border); color:var(--dim); cursor:pointer; transition:all .2s; }
+  .sp-btn:hover { border-color:var(--accent); color:var(--accent); }
+  .sp-btn.active { border-color:var(--accent); color:var(--accent); background:rgba(0,229,255,.08); }
+
+  /* KEYBOARD MAP */
+  .km { display:grid; grid-template-columns:repeat(3,1fr); gap:4px; }
+  .kc { background:rgba(0,0,0,.3); border:1px solid var(--border); padding:5px 4px; text-align:center; font-family:'Rajdhani',sans-serif; font-size:9px; font-weight:600; letter-spacing:1px; line-height:1.5; }
+  .kc .k  { font-size:14px; color:var(--accent); display:block; }
+  .kc .ks { font-size:14px; color:var(--hot); display:block; }
+
+  /* LOG */
+  #log { font-size:9px; line-height:1.9; color:var(--dim); height:130px; overflow-y:auto; }
+  #log::-webkit-scrollbar { width:2px; }
+  #log::-webkit-scrollbar-thumb { background:var(--border); }
+  .le { border-bottom:1px solid rgba(26,37,53,.4); padding:1px 0; }
+  .le.cmd  { color:var(--accent); }
+  .le.info { color:var(--green); }
+  .le.err  { color:var(--red); }
+
+  /* SCANLINES */
+  body::after { content:''; position:fixed; inset:0; background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.05) 2px,rgba(0,0,0,.05) 4px); pointer-events:none; z-index:9999; }
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div id="topbar">
+  <div class="logo">ROBO<b>CTRL</b></div>
+  <div class="sep"></div>
+  <div class="pill">
+    <div class="dot" id="bt-dot"></div>
+    <span class="pill-label" id="bt-lbl">BT OFF</span>
+  </div>
+  <div class="pill">
+    <div class="dot" id="cam-dot"></div>
+    <span class="pill-label" id="cam-lbl">CAM OFF</span>
+  </div>
+  <div id="hum-pill">
+    <span style="font-size:9px;letter-spacing:2px;color:var(--dim);">HUM</span>
+    <span id="hum-val">--%</span>
+  </div>
+  <div class="spacer"></div>
+  <div class="hint">HOLD TO MOVE · RELEASE TO STOP</div>
+</div>
+
+<!-- HUMIDITY ALERT BANNER -->
+<div id="hum-alert">⚠ HIGH HUMIDITY — <span id="hum-alert-val">--%</span> — CHECK ENVIRONMENT</div>
+
+<!-- CAMERA MAIN -->
+<div id="cam-main">
+  <div id="no-signal">
+    <div class="ns-grid"></div>
+    <div class="ns-icon">📷</div>
+    <div class="ns-title">NO SIGNAL</div>
+    <div class="ns-sub">ENTER CAMERA ESP32 IP BELOW</div>
+  </div>
+
+  <img id="cam-feed" alt="Live Feed" crossOrigin="anonymous" />
+
+  <div class="cc tl"></div>
+  <div class="cc tr"></div>
+  <div class="cc bl"></div>
+  <div class="cc br"></div>
+  <div id="live-badge">● LIVE</div>
+
+  <!-- Recording UI -->
+  <div id="rec-bar">
+    <div id="rec-timer">⏺ 00:00:00</div>
+    <button class="rec-btn" id="btn-rec" onclick="toggleRec()" style="display:none;">⏺ REC</button>
+    <a class="rec-btn" href="https://drive.google.com/drive/my-drive" target="_blank">↑ DRIVE</a>
+  </div>
+  <div id="rec-files"></div>
+  <canvas id="rec-canvas"></canvas>
+
+  <!-- Camera IP bar -->
+  <div id="cam-bar">
+    <input id="cam-ip" type="text" value="http://172.20.10.2" placeholder="http://192.168.x.x (Camera ESP32)" />
+    <button class="cbtn" id="btn-cam" onclick="toggleCam()">▶ STREAM</button>
+  </div>
+</div>
+
+<!-- SIDEBAR -->
+<div id="sidebar">
+
+  <!-- BLE CONNECTION -->
+  <div class="sec">
+    <div class="sec-lbl">// BLUETOOTH MOTOR</div>
+    <input id="bt-name" type="text" placeholder="ESP32_Robot_KMUTT" />
+    <button id="btn-bt" onclick="toggleBT()">▶ CONNECT BLE</button>
+    <div id="conn-status" style="margin-top:10px;padding:6px 10px;background:rgba(0,0,0,.3);border:1px solid var(--border);font-size:8px;letter-spacing:2px;color:var(--dim);">
+      STATUS: <span id="conn-active" style="color:var(--dim);">DISCONNECTED</span>
+    </div>
+  </div>
+
+  <!-- D-PAD -->
+  <div class="sec">
+    <div class="sec-lbl">// MOTION CONTROL</div>
+    <div class="dpad">
+      <div class="drow">
+        <div class="ds"></div>
+        <button class="db" id="db-f"
+          onmousedown="startDrive('F')" onmouseup="stopDrive()"
+          ontouchstart="startDrive('F')" ontouchend="stopDrive()">▲<span class="k">W / ↑</span></button>
+        <div class="ds"></div>
+      </div>
+      <div class="drow">
+        <button class="db" id="db-l"
+          onmousedown="startDrive('L')" onmouseup="stopDrive()"
+          ontouchstart="startDrive('L')" ontouchend="stopDrive()">◀<span class="k">A / ←</span></button>
+        <div class="dc" onmousedown="stopDrive()" ontouchstart="stopDrive()">
+          <div class="sq"></div>
+        </div>
+        <button class="db" id="db-r"
+          onmousedown="startDrive('R')" onmouseup="stopDrive()"
+          ontouchstart="startDrive('R')" ontouchend="stopDrive()">▶<span class="k">D / →</span></button>
+      </div>
+      <div class="drow">
+        <div class="ds"></div>
+        <button class="db" id="db-b"
+          onmousedown="startDrive('B')" onmouseup="stopDrive()"
+          ontouchstart="startDrive('B')" ontouchend="stopDrive()">▼<span class="k">X / ↓</span></button>
+        <div class="ds"></div>
+      </div>
+    </div>
+    <div class="lcmd">
+      <span class="lcmd-lbl">LAST CMD</span>
+      <span id="lc-val">——</span>
+    </div>
+  </div>
+
+  <!-- SPEED -->
+  <div class="sec">
+    <div class="sec-lbl">// SPEED CONTROL</div>
+    <div class="speed-row">
+      <span class="speed-lbl">MOTOR SPEED</span>
+      <span class="speed-val" id="spd-val">200<span style="font-size:10px;color:var(--dim);">/255</span></span>
+    </div>
+    <input type="range" class="speed-slider" id="spd-slider"
+      min="80" max="255" value="200" step="5"
+      oninput="onSpeedSlider(this.value)"
+      onchange="sendSpeed(this.value)" />
+    <div class="speed-row" style="margin-top:2px;">
+      <span class="speed-lbl">SLOW</span>
+      <span class="speed-lbl" id="spd-pct">78%</span>
+      <span class="speed-lbl">FAST</span>
+    </div>
+    <div class="speed-presets">
+      <button class="sp-btn" onclick="setSpeed(100)">SLOW</button>
+      <button class="sp-btn active" onclick="setSpeed(200)">MED</button>
+      <button class="sp-btn" onclick="setSpeed(255)">FULL</button>
+    </div>
+  </div>
+
+  <!-- HUMIDITY -->
+  <div class="sec">
+    <div class="sec-lbl">// HUMIDITY — DHT11</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;">
+      <div style="background:rgba(0,0,0,.3);border:1px solid var(--border);padding:10px;text-align:center;">
+        <div style="font-size:8px;letter-spacing:2px;color:var(--dim);margin-bottom:4px;">HUMIDITY</div>
+        <div id="hum-display" style="font-family:'Rajdhani',sans-serif;font-weight:700;font-size:22px;color:var(--accent);">--%</div>
+      </div>
+      <div style="background:rgba(0,0,0,.3);border:1px solid var(--border);padding:10px;text-align:center;">
+        <div style="font-size:8px;letter-spacing:2px;color:var(--dim);margin-bottom:4px;">TEMP</div>
+        <div id="temp-display" style="font-family:'Rajdhani',sans-serif;font-weight:700;font-size:22px;color:var(--accent);">--°C</div>
+      </div>
+    </div>
+    <div style="background:rgba(0,0,0,.3);border:1px solid var(--border);padding:6px 10px;font-size:8px;letter-spacing:1px;color:var(--dim);">
+      ALERT: <span style="color:var(--accent);">80%</span> &nbsp;|&nbsp; UPDATE: <span style="color:var(--accent);">2s VIA BLE</span>
+    </div>
+  </div>
+
+  <!-- KEYBOARD -->
+  <div class="sec">
+    <div class="sec-lbl">// KEYBOARD</div>
+    <div class="km">
+      <div></div>
+      <div class="kc"><span class="k">W/↑</span>FWD</div>
+      <div></div>
+      <div class="kc"><span class="k">A/←</span>LEFT</div>
+      <div class="kc"><span class="ks">S</span>STOP</div>
+      <div class="kc"><span class="k">D/→</span>RIGHT</div>
+      <div></div>
+      <div class="kc"><span class="k">X/↓</span>BACK</div>
+      <div></div>
+    </div>
+  </div>
+
+  <!-- LOG -->
+  <div class="sec" style="flex:1">
+    <div class="sec-lbl">// LOG</div>
+    <div id="log"><div class="le info">[SYS] Ready. Connect BLE for motor control.</div></div>
+  </div>
+
+</div>
+
+<script>
+'use strict';
+
+// ════════════════════════════════════════════════
+//  BLE — MOTOR + HUMIDITY (no WiFi for motor)
+// ════════════════════════════════════════════════
+const SVC  = '0000ffe0-0000-1000-8000-00805f9b34fb';
+const CHAR = '0000ffe1-0000-1000-8000-00805f9b34fb';
+const LBL  = {F:'FORWARD',B:'BACKWARD',L:'LEFT',R:'RIGHT',S:'STOP'};
+const BID  = {F:'db-f',B:'db-b',L:'db-l',R:'db-r'};
+
+let btDev    = null;
+let btChar   = null;
+let btOn     = false;
+let bleWriting   = false;
+let pendingWrite = null;
+
+async function toggleBT() { btOn ? discBT() : await connBT(); }
+
+async function connBT() {
+  if (!navigator.bluetooth) { addLog('Web Bluetooth not supported — use Chrome/Edge','err'); return; }
+  try {
+    addLog('Scanning BLE...','info');
+    const name = document.getElementById('bt-name').value.trim() || 'ESP32_Robot_KMUTT';
+    btDev = await navigator.bluetooth.requestDevice({
+      filters: [{ name }],
+      optionalServices: [SVC]
+    });
+
+    btDev.addEventListener('gattserverdisconnected', onBLEDrop);
+
+    await doGATTConnect();
+
+  } catch(e) {
+    addLog('BLE: ' + e.message, 'err');
+  }
+}
+
+async function doGATTConnect() {
+  try {
+    const srv  = await btDev.gatt.connect();
+    const svc  = await srv.getPrimaryService(SVC);
+    btChar     = await svc.getCharacteristic(CHAR);
+
+    // ── Subscribe to notifications for humidity ──
+    await btChar.startNotifications();
+    // Remove old listener first to avoid duplicates on reconnect
+    btChar.removeEventListener('characteristicvaluechanged', onBLENotify);
+    btChar.addEventListener('characteristicvaluechanged', onBLENotify);
+
+    setBT(true);
+    addLog('BLE connected: ' + (btDev.name || btDev.id), 'info');
+    sendSpeedOnConnect();
+  } catch(e) {
+    addLog('GATT connect failed: ' + e.message, 'err');
+    setBT(false);
+  }
+}
+
+function onBLENotify(e) {
+  const raw = new TextDecoder().decode(e.target.value);
+  processHumidity(raw);
+}
+
+async function onBLEDrop() {
+  setBT(false);
+  addLog('BLE dropped — reconnecting...', 'err');
+  // Auto-reconnect loop
+  let retries = 0;
+  while (retries < 10) {
+    await new Promise(r => setTimeout(r, 2000));
+    if (btOn) return; // already reconnected
+    try {
+      await doGATTConnect();
+      if (btOn) return;
+    } catch(_) {}
+    retries++;
+    addLog('BLE retry ' + retries + '/10...', 'err');
+  }
+  addLog('BLE reconnect failed — press CONNECT BLE to retry manually', 'err');
+}
+
+function discBT() {
+  if (btDev && btDev.gatt.connected) btDev.gatt.disconnect();
+  btDev  = null;
+  btChar = null;
+  setBT(false);
+  stopDrive();
+  addLog('BLE disconnected', 'err');
+}
+
+function setBT(s) {
+  btOn = s;
+  document.getElementById('bt-dot').classList.toggle('on', s);
+  const l = document.getElementById('bt-lbl');
+  l.classList.toggle('on', s);
+  l.textContent = s ? 'BT ON' : 'BT OFF';
+  const b = document.getElementById('btn-bt');
+  b.classList.toggle('disc', s);
+  b.textContent = s ? '■ DISCONNECT BLE' : '▶ CONNECT BLE';
+  const ca = document.getElementById('conn-active');
+  ca.textContent = s ? 'BLE CONNECTED' : 'DISCONNECTED';
+  ca.style.color = s ? 'var(--green)' : 'var(--dim)';
+}
+
+// ════════════════════════════════════════════════
+//  SEND OVER BLE (write-lock prevents GATT collision)
+// ════════════════════════════════════════════════
+async function sendBLE(payload) {
+  if (!btOn || !btChar) return;
+  if (bleWriting) { pendingWrite = payload; return; }
+  bleWriting = true;
+  try {
+    await btChar.writeValueWithoutResponse(new TextEncoder().encode(payload));
+  } catch(e) {
+    try { await btChar.writeValue(new TextEncoder().encode(payload)); } catch(_) {}
+  } finally {
+    bleWriting = false;
+    if (pendingWrite !== null) {
+      const next = pendingWrite; pendingWrite = null;
+      await sendBLE(next);
+    }
+  }
+}
+
+// ════════════════════════════════════════════════
+//  CONTINUOUS DRIVING ENGINE
+// ════════════════════════════════════════════════
+let driveCmd   = null;
+let driveTimer = null;
+
+function startDrive(c) {
+  if (driveCmd === c) return;
+  driveCmd = c;
+  updateDriveUI(c);
+  sendBLE(c);
+  if (driveTimer) clearInterval(driveTimer);
+  // Repeat every 100ms to keep ESP32 watchdog (300ms) fed
+  driveTimer = setInterval(() => { if (driveCmd) sendBLE(driveCmd); }, 100);
+}
+
+function stopDrive() {
+  driveCmd = null;
+  if (driveTimer) { clearInterval(driveTimer); driveTimer = null; }
+  updateDriveUI('S');
+  sendBLE('S');
+}
+
+function updateDriveUI(c) {
+  document.querySelectorAll('.db').forEach(b => b.classList.remove('active'));
+  if (BID[c]) document.getElementById(BID[c])?.classList.add('active');
+  const v = document.getElementById('lc-val');
+  v.textContent = LBL[c] || c;
+  v.style.color = c === 'S' ? 'var(--hot)' : 'var(--accent)';
+  if (c !== 'S') addLog('[CMD] ' + LBL[c], 'cmd');
+}
+
+// ════════════════════════════════════════════════
+//  KEYBOARD — FIXED
+//  Arrow keys: ArrowUp/Down/Left/Right (mixed case, NOT lowercased)
+//  S = stop only, ArrowDown = backward (removed from STOP_KEYS)
+// ════════════════════════════════════════════════
+const KEY_MAP = {
+  'w': 'F', 'ArrowUp': 'F',
+  'a': 'L', 'ArrowLeft': 'L',
+  'd': 'R', 'ArrowRight': 'R',
+  'x': 'B', 'ArrowDown': 'B'
+};
+const STOP_KEYS = new Set(['s', ' ']);
+const heldKeys  = new Set();
+
+document.addEventListener('keydown', e => {
+  const k = e.key; // do NOT lowercase — Arrow keys are mixed case
+  if (STOP_KEYS.has(k.toLowerCase())) { stopDrive(); e.preventDefault(); return; }
+  if (KEY_MAP[k] && !heldKeys.has(k)) {
+    heldKeys.add(k);
+    startDrive(KEY_MAP[k]);
+    e.preventDefault();
+  }
+});
+
+document.addEventListener('keyup', e => {
+  const k = e.key;
+  if (KEY_MAP[k]) {
+    heldKeys.delete(k);
+    const stillHeld = Object.keys(KEY_MAP).some(mk => heldKeys.has(mk));
+    if (!stillHeld) stopDrive();
+    e.preventDefault();
+  }
+});
+
+// ════════════════════════════════════════════════
+//  CAMERA — WiFi stream from camera ESP32
+// ════════════════════════════════════════════════
+let camOn = false;
+function toggleCam() { camOn ? stopCam() : startCam(); }
+
+function startCam() {
+  const ip = document.getElementById('cam-ip').value.trim().replace(/\/+$/, '');
+  if (!ip) { addLog('Enter camera IP.', 'err'); return; }
+  const feed = document.getElementById('cam-feed');
+  feed.crossOrigin = 'anonymous';
+  feed.src = ip + '/';
+  feed.style.display = 'block';
+  document.getElementById('no-signal').style.display = 'none';
+  feed.onload = () => {
+    document.getElementById('live-badge').style.display = 'block';
+    setCam(true);
+    addLog('Camera live: ' + ip, 'info');
+    startRec();
+  };
+  feed.onerror = () => {
+    feed.style.display = 'none';
+    document.getElementById('no-signal').style.display = 'flex';
+    document.getElementById('live-badge').style.display = 'none';
+    const btn = document.getElementById('btn-cam');
+    btn.textContent = '▶ STREAM'; btn.classList.remove('off');
+    setCam(false); camOn = false;
+    addLog('Camera failed — check IP and WiFi on camera ESP32', 'err');
+  };
+  camOn = true;
+  document.getElementById('btn-cam').textContent = '■ STOP';
+  document.getElementById('btn-cam').classList.add('off');
+  addLog('Connecting camera: ' + ip + '...', 'info');
+}
+
+function stopCam() {
+  if (mediaRecorder && mediaRecorder.state === 'recording') stopRec();
+  const feed = document.getElementById('cam-feed');
+  feed.src = ''; feed.style.display = 'none';
+  document.getElementById('no-signal').style.display = 'flex';
+  document.getElementById('live-badge').style.display = 'none';
+  const btn = document.getElementById('btn-cam');
+  btn.textContent = '▶ STREAM'; btn.classList.remove('off');
+  setCam(false); camOn = false;
+  addLog('Camera stopped', 'err');
+}
+
+function setCam(s) {
+  document.getElementById('cam-dot').classList.toggle('on', s);
+  const l = document.getElementById('cam-lbl');
+  l.classList.toggle('on', s);
+  l.textContent = s ? 'CAM LIVE' : 'CAM OFF';
+}
+
+// ════════════════════════════════════════════════
+//  RECORDING
+// ════════════════════════════════════════════════
+let mediaRecorder = null, recChunks = [], recInterval = null;
+let recStartTime  = null, recStartLabel = null, animFrame = null;
+
+const padN = n => String(n).padStart(2, '0');
+const fmtT = d => `${padN(d.getHours())}:${padN(d.getMinutes())}:${padN(d.getSeconds())}`;
+const fmtD = ms => { const s=Math.floor(ms/1000),h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sc=s%60; return `${padN(h)}:${padN(m)}:${padN(sc)}`; };
+
+function toggleRec() { mediaRecorder && mediaRecorder.state === 'recording' ? stopRec() : startRec(); }
+
+function startRec() {
+  const feed   = document.getElementById('cam-feed');
+  const canvas = document.getElementById('rec-canvas');
+  if (!camOn || feed.style.display === 'none') { addLog('Start stream before recording.', 'err'); return; }
+  if (mediaRecorder && mediaRecorder.state === 'recording') return;
+
+  canvas.width = feed.naturalWidth || 640; canvas.height = feed.naturalHeight || 480;
+  const ctx = canvas.getContext('2d');
+  let tainted = false;
+  (function draw() {
+    try { ctx.drawImage(feed, 0, 0, canvas.width, canvas.height); tainted = false; }
+    catch(e) { if (!tainted) { tainted = true; addLog('Canvas CORS blocked — add CORS headers to camera sketch', 'err'); } }
+    animFrame = requestAnimationFrame(draw);
+  })();
+
+  let stream;
+  try { stream = canvas.captureStream(15); }
+  catch(e) { addLog('captureStream failed: ' + e.message, 'err'); cancelAnimationFrame(animFrame); return; }
+
+  const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : 'video/webm';
+  try { mediaRecorder = new MediaRecorder(stream, { mimeType: mime }); }
+  catch(e) { addLog('MediaRecorder: ' + e.message, 'err'); cancelAnimationFrame(animFrame); return; }
+
+  recChunks = [];
+  mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recChunks.push(e.data); };
+  mediaRecorder.onstop = saveRecording;
+  mediaRecorder.start(1000);
+
+  recStartTime = new Date(); recStartLabel = fmtT(recStartTime);
+  recInterval = setInterval(() => { document.getElementById('rec-timer').textContent = '⏺ ' + fmtD(Date.now() - recStartTime); }, 1000);
+  document.getElementById('rec-timer').style.display = 'block';
+  document.getElementById('btn-rec').textContent = '⏹ STOP';
+  document.getElementById('btn-rec').classList.add('recording');
+  addLog('⏺ Recording started at ' + recStartLabel, 'info');
+}
+
+function stopRec() {
+  if (!mediaRecorder) return;
+  mediaRecorder.stop(); cancelAnimationFrame(animFrame); clearInterval(recInterval);
+  document.getElementById('rec-timer').style.display = 'none';
+  document.getElementById('btn-rec').textContent = '⏺ REC';
+  document.getElementById('btn-rec').classList.remove('recording');
+  addLog('Recording stopped', 'info');
+}
+
+function saveRecording() {
+  const blob     = new Blob(recChunks, { type: 'video/webm' });
+  const endTime  = new Date(), endLabel = fmtT(endTime);
+  const sizeMB   = (blob.size / (1024 * 1024)).toFixed(1);
+  const duration = fmtD(endTime - recStartTime);
+  const dateStr  = recStartTime.toISOString().slice(0, 10);
+  const filename = `ROBO_${dateStr}_${recStartLabel.replace(/:/g,'-')}_to_${endLabel.replace(/:/g,'-')}.webm`;
+  const url      = URL.createObjectURL(blob);
+  showRecModal(url, filename, sizeMB, duration, recStartLabel, endLabel, [...humidityLog]);
+  addLog(`Saved: ${filename} (${sizeMB}MB, ${duration})`, 'info');
+  mediaRecorder = null;
+}
+
+function showRecModal(url, filename, sizeMB, duration, startLabel, endLabel, humData) {
+  document.getElementById('rec-modal')?.remove();
+  const modal = document.createElement('div');
+  modal.id = 'rec-modal';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);font-family:\'JetBrains Mono\',monospace;';
+  modal.innerHTML = `
+  <div style="background:#0c1018;border:1px solid #1a2535;padding:28px;max-width:500px;width:92%;position:relative;max-height:90vh;overflow-y:auto;">
+    <div style="position:absolute;top:8px;left:8px;width:14px;height:14px;border-top:2px solid #00e5ff;border-left:2px solid #00e5ff;opacity:.5;"></div>
+    <div style="position:absolute;bottom:8px;right:8px;width:14px;height:14px;border-bottom:2px solid #00e5ff;border-right:2px solid #00e5ff;opacity:.5;"></div>
+    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:4px;color:#3d5060;margin-bottom:16px;">// RECORDING COMPLETE</div>
+    <video controls style="width:100%;border:1px solid #1a2535;margin-bottom:14px;background:#000;max-height:190px;" src="${url}"></video>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:14px;">
+      <div style="background:rgba(0,0,0,.4);border:1px solid #1a2535;padding:8px;text-align:center;">
+        <div style="font-family:'Rajdhani',sans-serif;font-size:8px;letter-spacing:2px;color:#3d5060;margin-bottom:3px;">START</div>
+        <div style="font-family:'Rajdhani',sans-serif;font-weight:700;font-size:14px;color:#00e5ff;">${startLabel}</div>
+      </div>
+      <div style="background:rgba(0,0,0,.4);border:1px solid #1a2535;padding:8px;text-align:center;">
+        <div style="font-family:'Rajdhani',sans-serif;font-size:8px;letter-spacing:2px;color:#3d5060;margin-bottom:3px;">END</div>
+        <div style="font-family:'Rajdhani',sans-serif;font-weight:700;font-size:14px;color:#00e5ff;">${endLabel}</div>
+      </div>
+      <div style="background:rgba(0,0,0,.4);border:1px solid #1a2535;padding:8px;text-align:center;">
+        <div style="font-family:'Rajdhani',sans-serif;font-size:8px;letter-spacing:2px;color:#3d5060;margin-bottom:3px;">SIZE</div>
+        <div style="font-family:'Rajdhani',sans-serif;font-weight:700;font-size:14px;color:#00e5ff;">${sizeMB}MB</div>
+      </div>
+    </div>
+    <div style="border:1px solid #1a2535;padding:10px;background:rgba(0,0,0,.3);margin-bottom:14px;">
+      <div style="font-family:'Rajdhani',sans-serif;font-size:9px;letter-spacing:3px;color:#3d5060;margin-bottom:6px;">// HUMIDITY LOG</div>
+      <canvas id="hum-chart" height="75" style="width:100%;display:block;"></canvas>
+      <div id="hum-chart-empty" style="text-align:center;font-size:9px;color:#3d5060;padding:14px 0;">No humidity data recorded this session.</div>
+    </div>
+    <div style="font-size:8px;color:#3d5060;margin-bottom:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${filename}">📁 ${filename} · ${duration}</div>
+    <div style="display:flex;gap:8px;">
+      <a href="${url}" download="${filename}" style="flex:1;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:2px;text-align:center;background:transparent;border:1px solid #00e5ff;color:#00e5ff;padding:11px;cursor:pointer;text-decoration:none;clip-path:polygon(6px 0%,100% 0%,calc(100% - 6px) 100%,0% 100%);">↓ DOWNLOAD</a>
+      <a href="https://drive.google.com/drive/my-drive" target="_blank" style="flex:1;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:2px;text-align:center;background:transparent;border:1px solid #34a853;color:#34a853;padding:11px;cursor:pointer;text-decoration:none;clip-path:polygon(6px 0%,100% 0%,calc(100% - 6px) 100%,0% 100%);">↑ GOOGLE DRIVE</a>
+      <button onclick="document.getElementById('rec-modal').remove()" style="font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;padding:11px 14px;background:transparent;border:1px solid #1a2535;color:#3d5060;cursor:pointer;">✕</button>
+    </div>
+    <div style="font-size:8px;color:#2a3a4a;margin-top:10px;letter-spacing:1px;">Format: WebM · Plays in Chrome, VLC</div>
+  </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  if (humData && humData.length > 1) {
+    const c = document.getElementById('hum-chart');
+    document.getElementById('hum-chart-empty').style.display = 'none';
+    c.width = c.offsetWidth || 420; drawHumChart(c, humData);
+  }
+}
+
+// ════════════════════════════════════════════════
+//  HUMIDITY — received via BLE notifications
+// ════════════════════════════════════════════════
+const humidityLog = []; const HUM_ALERT = 80; let lastHumAlert = 0;
+
+function processHumidity(raw) {
+  if (typeof raw !== 'string' || !raw.startsWith('H:')) return;
+  const p = raw.slice(2).split(':');
+  if (p.length < 2) return;
+  const h = parseFloat(p[0]), t = parseFloat(p[1]);
+  if (isNaN(h) || isNaN(t)) return;
+
+  humidityLog.push({ ts: Date.now(), h, t });
+  if (humidityLog.length > 1800) humidityLog.shift();
+
+  document.getElementById('hum-display').textContent = h.toFixed(1) + '%';
+  document.getElementById('hum-display').style.color = h >= HUM_ALERT ? 'var(--red)' : 'var(--accent)';
+  document.getElementById('temp-display').textContent = t.toFixed(1) + '°C';
+  document.getElementById('hum-val').textContent = h.toFixed(1) + '%';
+  document.getElementById('hum-val').classList.toggle('warn', h >= HUM_ALERT);
+
+  const ha = document.getElementById('hum-alert');
+  if (h >= HUM_ALERT) {
+    ha.style.display = 'block';
+    document.getElementById('hum-alert-val').textContent = h.toFixed(1) + '%';
+    if (Date.now() - lastHumAlert > 10000) {
+      addLog('⚠ HIGH HUMIDITY: ' + h.toFixed(1) + '% (' + t.toFixed(1) + '°C)', 'err');
+      lastHumAlert = Date.now();
+    }
+  } else {
+    ha.style.display = 'none';
+  }
+  addLog('[DHT] ' + h.toFixed(1) + '% | ' + t.toFixed(1) + '°C', 'info');
+}
+
+function drawHumChart(canvas, data) {
+  const ctx=canvas.getContext('2d'),W=canvas.width,H=canvas.height;
+  const p={top:10,right:10,bottom:20,left:34};
+  const iW=W-p.left-p.right,iH=H-p.top-p.bottom;
+  ctx.clearRect(0,0,W,H);
+  const vals=data.map(d=>d.h);
+  const minH=Math.max(0,Math.floor(Math.min(...vals)-5));
+  const maxH=Math.min(100,Math.ceil(Math.max(...vals)+5));
+  const tMin=data[0].ts,tRange=(data[data.length-1].ts-tMin)||1;
+  const xOf=ts=>p.left+((ts-tMin)/tRange)*iW;
+  const yOf=v=>p.top+(1-(v-minH)/(maxH-minH))*iH;
+  ctx.strokeStyle='rgba(26,37,53,.8)'; ctx.fillStyle='#3d5060';
+  ctx.font='8px JetBrains Mono,monospace'; ctx.textAlign='right';
+  for(let i=0;i<=4;i++){
+    const v=minH+(maxH-minH)*(i/4),y=yOf(v);
+    ctx.beginPath(); ctx.moveTo(p.left,y); ctx.lineTo(W-p.right,y); ctx.stroke();
+    ctx.fillText(Math.round(v)+'%',p.left-4,y+3);
+  }
+  if(HUM_ALERT>=minH&&HUM_ALERT<=maxH){
+    const ay=yOf(HUM_ALERT);
+    ctx.strokeStyle='rgba(255,34,85,.5)'; ctx.setLineDash([3,3]);
+    ctx.beginPath(); ctx.moveTo(p.left,ay); ctx.lineTo(W-p.right,ay); ctx.stroke();
+    ctx.setLineDash([]); ctx.fillStyle='rgba(255,34,85,.8)'; ctx.textAlign='left';
+    ctx.fillText('ALERT 80%',p.left+4,ay-3);
+  }
+  ctx.beginPath();
+  ctx.moveTo(xOf(data[0].ts),yOf(data[0].h));
+  data.forEach(d=>ctx.lineTo(xOf(d.ts),yOf(d.h)));
+  ctx.lineTo(xOf(data[data.length-1].ts),H-p.bottom);
+  ctx.lineTo(xOf(data[0].ts),H-p.bottom); ctx.closePath();
+  const g=ctx.createLinearGradient(0,p.top,0,H-p.bottom);
+  g.addColorStop(0,'rgba(0,229,255,.25)'); g.addColorStop(1,'rgba(0,229,255,.02)');
+  ctx.fillStyle=g; ctx.fill();
+  ctx.beginPath(); ctx.strokeStyle='#00e5ff'; ctx.lineWidth=1.5;
+  data.forEach((d,i)=>i===0?ctx.moveTo(xOf(d.ts),yOf(d.h)):ctx.lineTo(xOf(d.ts),yOf(d.h)));
+  ctx.stroke();
+  if(data.length<=60){
+    data.forEach(d=>{ ctx.beginPath(); ctx.arc(xOf(d.ts),yOf(d.h),2,0,Math.PI*2); ctx.fillStyle=d.h>=HUM_ALERT?'#ff2255':'#00e5ff'; ctx.fill(); });
+  }
+  ctx.fillStyle='#3d5060'; ctx.textAlign='center'; ctx.font='8px JetBrains Mono,monospace';
+  [data[0],data[Math.floor(data.length/2)],data[data.length-1]].forEach(d=>{
+    const dt=new Date(d.ts);
+    ctx.fillText(`${padN(dt.getHours())}:${padN(dt.getMinutes())}:${padN(dt.getSeconds())}`,xOf(d.ts),H-p.bottom+12);
+  });
+}
+
+// ════════════════════════════════════════════════
+//  SPEED CONTROL
+// ════════════════════════════════════════════════
+let currentSpeed = 200;
+
+function onSpeedSlider(val) {
+  val = parseInt(val); currentSpeed = val;
+  document.getElementById('spd-val').innerHTML = val + '<span style="font-size:10px;color:var(--dim);">/255</span>';
+  document.getElementById('spd-pct').textContent = Math.round((val / 255) * 100) + '%';
+  const pct = Math.round(((val - 80) / (255 - 80)) * 100);
+  document.getElementById('spd-slider').style.background = `linear-gradient(to right,var(--accent) 0%,var(--accent) ${pct}%,var(--border) ${pct}%)`;
+  document.querySelectorAll('.sp-btn').forEach(b => b.classList.remove('active'));
+  const btns = document.querySelectorAll('.sp-btn');
+  if (val === 100) btns[0].classList.add('active');
+  if (val === 200) btns[1].classList.add('active');
+  if (val === 255) btns[2].classList.add('active');
+}
+
+async function sendSpeed(val) {
+  val = parseInt(val);
+  if (!btOn || !btChar) { addLog('[SIM] Speed: ' + val, 'cmd'); return; }
+  await sendBLE('V:' + val);
+  addLog('Speed → ' + val + '/255 (' + Math.round((val / 255) * 100) + '%)', 'cmd');
+}
+
+function setSpeed(val) { document.getElementById('spd-slider').value = val; onSpeedSlider(val); sendSpeed(val); }
+function sendSpeedOnConnect() { setTimeout(() => sendSpeed(currentSpeed), 800); }
+
+// ════════════════════════════════════════════════
+//  LOG
+// ════════════════════════════════════════════════
+function addLog(msg, type = '') {
+  const el = document.getElementById('log');
+  const d  = document.createElement('div'); d.className = 'le ' + type;
+  d.textContent = '[' + new Date().toLocaleTimeString('en-US', { hour12: false }) + '] ' + msg;
+  el.appendChild(d); el.scrollTop = el.scrollHeight;
+  while (el.children.length > 100) el.removeChild(el.firstChild);
+}
+
+// Auto-start camera on page load, http://localhost:8080/robot-controller.html for seing website
+window.addEventListener('load', () => setTimeout(startCam, 600));
+</script>
+</body>
+</html>
